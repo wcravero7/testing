@@ -28,6 +28,8 @@ import base64
 import io
 import dash_ag_grid as dag
 from pandas.api.types import is_numeric_dtype
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import pairwise_distances
 
 
 # app = dash.Dash(__name__, suppress_callback_exceptions=True, external_stylesheets=[dbc.themes.BOOTSTRAP, "style.css"])
@@ -195,13 +197,6 @@ def sort_features_on_importance(model, X):
 
     # Aggregate SHAP values for categorical features
     contrib_df = contrib_df.groupby(lambda x: x.split('?')[0], axis=1).sum()
-
-    # Get maximum contribution
-    # some_max = contrib_df.abs().max().max()
-    # max_feature = contrib_df.columns[contrib_df.max().argmax()]
-    # min_feature = contrib_df.columns[contrib_df.min().argmin()]
-    # print(max_feature)
-    # print(min_feature)
     
     # Place contributions in a dataframe, calculate avg positive contribution score, and sort
     temp = pd.DataFrame({"features":contrib_df.columns, "avg_abs_contribs":contrib_df.abs().mean(axis=0)}).sort_values("avg_abs_contribs", ascending=False)
@@ -210,10 +205,6 @@ def sort_features_on_importance(model, X):
     # temp = pd.DataFrame({"features":contrib_df.columns, "std_contribs":contrib_df.max(axis=0)-contrib_df.min(axis=0)}).sort_values("std_contribs", ascending=False)
     
     return list(temp["features"])
-
-# ############### Get Features list sorted by contribution ###############
-# ordered_features = sort_features_on_importance(model, df)
-
 
 
 def update_model_metadata(model, df_clean_target):
@@ -231,7 +222,12 @@ def update_model_metadata(model, df_clean_target):
     print(max_contrib)
 
     ############# Get Predicted value precision ##############################
-    prediction_std = df_clean_target[target].std()
+    if is_classification:
+        y = np.where(df_clean_target[target] == target_map[0], 0, 1)
+        prediction_std = y.std()
+    else:
+        prediction_std = df_clean_target[target].std()
+
     if prediction_std < 0.1:
         sig_figs = 3
     elif prediction_std < 1:
@@ -253,12 +249,13 @@ def update_model_metadata(model, df_clean_target):
     ordered_features = sort_features_on_importance(model, X)
     
 
-update_model_metadata(model, df)
 if is_classification:
     unique_vals = np.unique(df[target].dropna())
     target_map = {0:unique_vals[0], 1:unique_vals[1]}
+update_model_metadata(model, df)
 
 
+learning_rate_slider_values = [0.0001, 0.001, 0.005] + [round(x, 2) for x in np.arange(0.01, 1.01, 0.01)]
 
 
 
@@ -285,6 +282,138 @@ def get_indicator_KPI(curr_value, prev_value, title):
     return fig
 
 
+############################################# Tag_Selection_UI ########################################
+right_panel = html.Div([
+    html.Div([
+        html.Div(f"{len(df.columns[0:10])} Selected", id="total-selected-tags-right-panel", style={"display":"inline-block","border":"0px solid",
+                                                                                 "height":"30px","marginLeft":"0vw"}),
+    ], style={"borderBottom":"1px solid #0000002e"}),
+    html.Div(style={"height":"8px"}),
+
+    html.Div([
+        dcc.Checklist(
+            id="final-features-checklist",
+            options=df.columns,#[],
+            value=df.columns[0:10],#[],
+            inputStyle={"marginRight":"8px"}
+        )
+
+    ], style={"border":"0px solid","width":"100%","height":"365px","overflowY":"scroll","marginLeft":"0vw"}),
+
+], id="right-panel", style={"border":"0px solid","width":"50%","height":"auto","position":"absolute",#"width":"25vw"#"height":"413px"
+                            "padding":"10px 0vw 0vh 1vw","display":"inline-block","backgroundColor":"transparent",
+                            "borderLeft":"1px solid","verticalAlign":"top","left":"50%","top":"0px","zIndex":"99"})#"left":"27vw"
+
+
+left_panel = html.Div([
+    html.Div([
+        html.Div(f"{len(df.columns)} Total Variables", id="total-tags", style={"display":"inline-block","border":"0px solid","height":"30px"}),
+    ], style={"borderBottom":"1px solid #0000002e"}),
+
+    html.Div(style={"height":"8px"}),
+    html.Div([
+        dcc.Input(id="search", type="text", placeholder="Search...", style={"display":"inline-block", "width":"80%", "border":"1px solid", "border":"none","backgroundColor":"rgb(231,231,231)"}),
+        html.Button("X", id="clear-search", style={"display":"inline-block", "border":"none","backgroundColor":"rgb(231,231,231)"}),
+    ]),
+    html.Div(style={"height":"8px"}),
+
+    html.Div([
+        dcc.Checklist(
+            id="select-all-checkbox",
+            options=["(ALL)"],
+            value=["(ALL)"],
+            inputStyle={"marginRight":"8px"}
+        )
+    ], style={"border":"0px solid"}),
+    html.Div(style={"height":"8px"}),
+
+    html.Div([
+        dcc.Checklist(
+            id="all-features-checklist",
+            options=df.columns,
+            value=df.columns[0:10],
+            inputStyle={"marginRight":"8px"}
+        )
+    ], style={"border":"0px solid","width":"100%","height":"300px","overflowY":"scroll"}),
+    
+], id="left-panel", style={"border":"0px solid","width":"50%","height":"auto","position":"absolute",#"width":"25vw"
+                           "padding":"10px 1vw 0vh 1vw","display":"inline-block","verticalAlign":"top",
+                           "zIndex":"100","backgroundColor":"transparent","left":"0","top":"0px"})
+
+tags_selection_UI = html.Div([
+    left_panel,
+    right_panel
+], id="outer-panel", 
+style={"border":"0px solid","width":"100%","height":"420px","left":"0vw","position":"relative","top":"0px",#"width":"53vw"
+       "padding":"0px 0vw 0px 0vw","borderRadius":"5px","borderTopLeftRadius":"0px","zIndex":"98",
+       "backgroundColor":"white","color":"black"})#"boxShadow":"0 2px 6px 0 gray",
+
+
+@app.callback(
+    dash.dependencies.Output(component_id='all-features-checklist', component_property='value', allow_duplicate=True),
+    dash.dependencies.Input(component_id='select-all-checkbox', component_property='value'),
+    dash.dependencies.State(component_id='all-features-checklist', component_property='value'),
+    dash.dependencies.State(component_id='all-features-checklist', component_property='options'),
+    prevent_initial_call=True,
+)
+def clicked_ALL_checkbox(select_all_checkbox, all_features_selected, all_features_options):
+    if len(select_all_checkbox) == 1:
+        additional_features_selected = []
+        for feature in all_features_options:
+            if feature not in all_features_selected:
+                additional_features_selected.append(feature)
+        all_features_selected.extend(additional_features_selected)
+    else:
+        for feature in all_features_options:
+            if feature in all_features_selected:
+                all_features_selected.remove(feature)
+    return all_features_selected
+
+@app.callback(
+    dash.dependencies.Output(component_id='final-features-checklist', component_property='value', allow_duplicate=True),
+    dash.dependencies.Input(component_id='all-features-checklist', component_property='value'),
+    dash.dependencies.State(component_id='all-features-checklist', component_property='options'),
+    dash.dependencies.State(component_id='final-features-checklist', component_property='value'),
+    prevent_initial_call=True,
+)
+def clicked_some_all_features_checkbox(all_features_selected, all_features_options, final_features):
+    return all_features_selected
+
+@app.callback(
+    dash.dependencies.Output(component_id='final-features-checklist', component_property='options', allow_duplicate=True),
+    dash.dependencies.Output(component_id='all-features-checklist', component_property='value', allow_duplicate=True),
+    dash.dependencies.Output(component_id='total-selected-tags-right-panel', component_property='children', allow_duplicate=True),
+    dash.dependencies.Input(component_id='final-features-checklist', component_property='value'),
+    dash.dependencies.State(component_id='all-features-checklist', component_property='value'),
+    prevent_initial_call=True,
+)
+def unselected_final_features_checkbox(final_features, all_features_selected):
+    result = final_features
+    return final_features, result, f"{len(final_features)} Selected"
+
+@app.callback(
+    dash.dependencies.Output(component_id='search', component_property='value', allow_duplicate=True),
+    dash.dependencies.Input(component_id='clear-search', component_property='n_clicks'),
+    prevent_initial_call=True,
+)
+def clear_search_field(n_click):
+    return ""
+
+@app.callback(
+    dash.dependencies.Output(component_id='all-features-checklist', component_property='options', allow_duplicate=True),
+    dash.dependencies.Input(component_id='search', component_property='value'),
+    prevent_initial_call=True,
+)
+def updating_search_field(search_text):
+    # print("updating_search_field")
+    if search_text == None or search_text == "":
+        return df.columns
+    filtered_tags = df.columns[df.columns.str.contains(search_text, case=False)]
+    return filtered_tags
+###################################### End Tag Selection UI ###############################################
+
+
+
 app.layout = html.Div([
 
     html.Button("click me", id="update-page-btn", n_clicks=0, style={"border":"none","color":"transparent"}),
@@ -293,29 +422,20 @@ app.layout = html.Div([
         id = "page-title",
         style={"position":"absolute","height":"8vh","top":"2vh","left":"5vw","fontSize":"4vh","fontWeight":"600"}),
 
-    # html.Div(
-    #     id="feature-slider-container",
-    #     style={"position":"absolute","height":"80vh","width":"15vw","left":"10vw","top":"15vh","border":"1px solid",
-    #            "overflowY":"auto","overflowX":"hidden"}),
-
-    # html.Div(
-    #     id="positive-contribution-container",
-    #     style={"position":"absolute","height":"80vh","width":"15vw","left":"30vw","top":"15vh","border":"1px solid",
-    #            "overflowY":"auto","overflowX":"hidden"}),
 
     html.Div([
         
         html.Div(
             id="feature-slider-container",
-            style={"position":"absolute","height":"80vh","width":"15vw","left":"15vw","top":"40px","border":"0px solid"}),#"top":"5vh"
+            style={"position":"absolute","height":"70vh","width":"15vw","left":"15vw","top":"20px","border":"0px solid"}),#"height":"80vh"
 
         html.Div(
             id="positive-contribution-container",
-            style={"position":"absolute","height":"80vh","width":"15vw","left":"30vw","top":"40px","border":"0px solid"}),#"top":"5vh"
+            style={"position":"absolute","height":"70vh","width":"15vw","left":"30vw","top":"20px","border":"0px solid"}),#"height":"80vh"
 
         html.Div(
             id="negative-contribution-container",
-            style={"position":"absolute","height":"80vh","width":"15vw","left":"0vw","top":"40px","border":"0px solid"}),#"top":"5vh"
+            style={"position":"absolute","height":"70vh","width":"15vw","left":"0vw","top":"20px","border":"0px solid"}),#"height":"80vh"
 
 
     ], style={"position":"absolute","height":"80vh","width":"45vw","left":"5vw","top":"15vh","border":"0px solid",
@@ -323,7 +443,8 @@ app.layout = html.Div([
               "backgroundColor":"#ffffff"}, className="split-background"),#"backgroundColor":"#fff"
     
     html.Div([
-        "CONTRIBUTIONS BY TAG"
+        "CONTRIBUTIONS BY TAG",
+        html.Button("click me", id="show-optimization-modal-btn", style={"float":"right","visibility":"visible"}),
     ], style={"position":"absolute","height":"4vh","width":"45vw","left":"5vw","top":"11vh","fontSize":"2.5vh","border":"0px solid",
               "borderTopLeftRadius":"5px","borderTopRightRadius":"5px","backgroundColor":"#dfdfdf","paddingLeft":"1vw",
               "color":"#599ad3","fontWeight":"600","boxShadow":"0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08)",
@@ -332,32 +453,12 @@ app.layout = html.Div([
     
 
     html.Div([
-        # html.Div([
-        #     html.Div([
-        #         html.Span("57.3", style={"border":"0px solid","lineHeight":"1"}), 
-        #         html.Span("%",style={"border":"0px solid","fontSize":"2.5vh","marginBottom":"1vh"}),
-        #     ], style={"width":"100%","border":"0px solid","marginTop":"1vh"}),
-            
-        #     html.Div("Good Run", style={"border":"0px solid","fontSize":"2vh","lineHeight":"1","paddingBottom":"1vh"}),
-        # ], style={"position":"relative","width":"8vw","float":"left","border":"0px solid","textAlign":"center","color":"#333333"}),
-
-
-        # html.Div([
-        #     html.Div([
-        #         html.Span("62.9", style={"border":"0px solid","lineHeight":"1"}), 
-        #         html.Span("%",style={"border":"0px solid","fontSize":"2.5vh","marginBottom":"1vh"}),
-        #     ], style={"width":"100%","border":"0px solid","marginTop":"1vh"}),
-            
-        #     html.Div("Bad Run", style={"border":"0px solid","fontSize":"2vh","lineHeight":"1","paddingBottom":"1vh"}),
-        # ], style={"position":"relative","width":"8vw","float":"right","border":"0px solid","textAlign":"center","color":"#333333"}),
-
-
         html.Div([
             html.Div([
-                html.Span("357.3", style={"border":"0px solid","lineHeight":"1"}), 
+                html.Span("", style={"border":"0px solid","lineHeight":"1"}), 
             ], style={"width":"100%","border":"0px solid","marginTop":"1vh"}),
             
-            html.Div("Die Pressure Act", style={"border":"0px solid","fontSize":"2vh","lineHeight":"1","paddingBottom":"1vh"}),
+            html.Div("", style={"border":"0px solid","fontSize":"2vh","lineHeight":"1","paddingBottom":"1vh"}),
         ], style={"position":"relative","width":"100%","border":"0px solid","textAlign":"center","color":"#333333"}),
 
 
@@ -391,6 +492,51 @@ app.layout = html.Div([
         # dbc.ModalFooter(dbc.Button("Close", id="save-actions", class_name="me-1"))
     ], id="modal", is_open=False, size="xl", zIndex=99999, autoFocus=False, centered=True),
 
+
+
+    ##################### Optimization ##########################
+    dbc.Modal([
+        dbc.ModalHeader(dbc.ModalTitle("Optimization")),
+        dbc.ModalBody([
+            
+            html.Div("Excluded Variables..."),
+            dcc.Dropdown(
+                id="exluded-optmization-features-dropdown",
+                multi=True,
+                clearable=False,
+                placeholder="None",
+                optionHeight=40,
+                disabled=False,
+                options=df.columns,
+                style={"fontSize":"14px", "border":"none", "cursor":"pointer"},#,"textOrientation":"upright","writingMode":"vertical-lr"
+                className="regular-dropdown"
+            ),
+
+            html.Div("Which Is Better?", id="optimization-direction", style={"marginTop":"2vh"}),
+            dcc.Dropdown(
+                id="higher-is-better-dropdown",
+                multi=False,
+                clearable=False,
+                placeholder="None",
+                optionHeight=40,
+                disabled=False,
+                # options=["Higher values of Die Pressure", "Lower values of Die Pressure"],
+                options=[{'label': 'Yes', 'value': 'Yes'},
+                         {'label': 'No', 'value': 'No'}],
+                value="Yes",
+                style={"fontSize":"14px", "border":"none", "cursor":"pointer"},#,"textOrientation":"upright","writingMode":"vertical-lr"
+                className="regular-dropdown"
+            ),
+            html.Div(style={"height":"2vh"}),
+            html.Span("Use Top"),
+            dcc.Input(id="top-n", type="text", value="10", style={"width":"50px"}),
+            html.Span("% of Samples"),
+
+
+
+        ]),
+        dbc.ModalFooter(dbc.Button("Optimize", id="optimize-btn", class_name="me-1"))
+    ], id="optimization-modal", is_open=False, size="lg", zIndex=99999, autoFocus=False, centered=True),
 
 
 
@@ -432,15 +578,26 @@ app.layout = html.Div([
                 optionHeight=40,
                 disabled=False,
                 style={"fontSize":"14px", "border":"none", "cursor":"pointer"},#,"textOrientation":"upright","writingMode":"vertical-lr"
-                # className="some-class",
+                className="regular-dropdown"
             ),
 
         ]),
         dbc.ModalFooter(dbc.Button("Next", id="save-output-next-btn", class_name="me-1"))
     ], id="select-output-modal", is_open=False, size="lg", zIndex=99999, autoFocus=False, centered=True, backdrop="static", keyboard=False),
 
+
     dbc.Modal([
-        dbc.ModalHeader(dbc.ModalTitle("3. Does The Order Of Samples Matter?")),
+        dbc.ModalHeader(dbc.ModalTitle("3. Select Inputs")),
+        dbc.ModalBody([
+            tags_selection_UI
+        ]),
+        dbc.ModalFooter(dbc.Button("Next", id="save-input-next-btn", class_name="me-1"))
+    ], id="select-input-modal", is_open=True, size="lg", zIndex=99999, autoFocus=False, centered=True, backdrop="static", keyboard=False),
+
+
+
+    dbc.Modal([
+        dbc.ModalHeader(dbc.ModalTitle("4. Does The Order Of Samples Matter?")),
         dbc.ModalBody([
             
             dcc.Dropdown(
@@ -453,7 +610,7 @@ app.layout = html.Div([
                 optionHeight=40,
                 disabled=False,
                 style={"fontSize":"14px", "border":"none", "cursor":"pointer"},#,"textOrientation":"upright","writingMode":"vertical-lr"
-                # className="some-class",
+                className="regular-dropdown"
             ),
 
         ]),
@@ -462,7 +619,7 @@ app.layout = html.Div([
 
 
     dbc.Modal([
-        dbc.ModalHeader(dbc.ModalTitle("4. Train Model")),
+        dbc.ModalHeader(dbc.ModalTitle("5. Train Model")),
         dbc.ModalBody([
             
             html.Div([
@@ -480,7 +637,8 @@ app.layout = html.Div([
                 html.Div("Learning Rate"),
                 html.Div(style={"height":"5px"}),
                 dcc.Slider(
-                    min=0.01, max=0.5, step=0.01, marks=None,
+                    min=0.01, max=1.0, step=0.01, marks=None,
+                    # step=None, marks={val: "" for val in learning_rate_slider_values},
                     value=0.1,
                     tooltip={"placement": "right", "always_visible": True, "style":{"fontSize":"14px"}},
                     id="learning-rate",
@@ -520,7 +678,7 @@ app.layout = html.Div([
 
                     dcc.Graph(
                         id="model-accuracy-gauge",
-                        figure=get_indicator_KPI(99.912, 87.5234, "Accuracy %"),
+                        figure=get_indicator_KPI(0, 0, "Accuracy %"),
                         # style={"height":"100%","width":"100%","padding":"0px", "border":"1px solid",
                         #     "boxSizing":"border-box"},
                         style={"border":"0px solid","boxSizing":"border-box","display":"inline-block"},
@@ -603,6 +761,117 @@ def get_multi_trace_graph(xs, ys, names, x_title, y_title, title, show_legend=Tr
 
 
 
+############################## show optimization-modal
+@app.callback(
+    dash.dependencies.Output(component_id="optimization-modal", component_property='is_open', allow_duplicate=True),
+    dash.dependencies.Input(component_id="show-optimization-modal-btn", component_property='n_clicks'),
+    prevent_initial_call=True,
+)
+def show_optimization_modal(n_clicks):
+    return True
+
+
+
+############################## Optimization
+@app.callback(
+    dash.dependencies.Output(component_id="optimization-modal", component_property='is_open', allow_duplicate=True),
+    # dash.dependencies.Output(component_id="feature-slider-container", component_property='children', allow_duplicate=True),
+    dash.dependencies.Output(component_id={"type":"update-x-values", "index":ALL}, component_property='value'),
+    dash.dependencies.Input(component_id="optimize-btn", component_property='n_clicks'),
+    dash.dependencies.State(component_id={"type":"update-x-values", "index":ALL}, component_property='value'),
+    dash.dependencies.State(component_id="exluded-optmization-features-dropdown", component_property='value'),
+    dash.dependencies.State(component_id="higher-is-better-dropdown", component_property='value'),
+    dash.dependencies.State(component_id="feature-slider-container", component_property='children'),
+    dash.dependencies.State(component_id="top-n", component_property='value'),
+    prevent_initial_call=True,
+)
+def find_optimal_values(n_clicks, ordered_values, static_features, optimization_direction, feature_sliders, top_n):
+    print("in find_optimal_values")
+    # static_features = ["Converting Machine", "Laminating Machine"]
+    # static_feature_values = ["JJ2", "LAM2"]
+    if static_features is None:
+        static_features = []
+    
+    # Get all the current slider values from all features that will not be optmized.
+    input_info = ctx.states_list[0]
+    feature_to_index = {}
+    for i in range(0, len(input_info)):
+        feature = input_info[i]["id"]["index"].split("-")[1]
+        feature_to_index[feature] = i
+    static_feature_values = []
+    for i in range(0, len(static_features)):
+        indx = feature_to_index[static_features[i]]
+        static_feature_values.append(ordered_values[indx])
+    
+
+    X = df.drop(columns=target)
+    X[static_features] = static_feature_values
+    encoded_X = pd.get_dummies(X, prefix_sep="?")
+    model_ready_X = encoded_X.reindex(columns=model_features, fill_value=0)
+
+    if is_classification:
+        predictions = model.predict_proba(model_ready_X)[:,1]
+    else:
+        predictions = model.predict(model_ready_X)
+
+    if optimization_direction == "Yes":
+        # optimal_index = np.argmax(predictions)
+        sorted_indices = np.argsort(-predictions)
+    else:
+        # optimal_index = np.argmin(predictions)
+        sorted_indices = np.argsort(predictions)
+
+    # get top_n samples with highest predicted values and find the sample that is most similar to the others
+    top_n = float(top_n)
+    top_indices = sorted_indices[0:int((top_n/100)*len(predictions))]
+    top_samples = model_ready_X.iloc[top_indices, :]
+    top_predictions = predictions[top_indices]
+    top_standarized_samples = StandardScaler().fit_transform(top_samples)
+    optimal_index = np.argmin(pairwise_distances(top_standarized_samples).mean(axis=1))
+    
+    # Get optimal_X values, which is a decoded series with NO dummies
+    optimal_encoded_X = top_samples.iloc[[optimal_index], :].reset_index(drop=True)
+    dummy_cols = optimal_encoded_X.filter(like="?")
+    decoded_categories = pd.from_dummies(dummy_cols, sep="?")
+    optimal_X = pd.concat([optimal_encoded_X.drop(columns=dummy_cols.columns), decoded_categories], axis=1).iloc[0,:]
+
+    # Get optimal_X values, which is a decoded series with NO dummies
+    # optimal_encoded_X = model_ready_X.iloc[[optimal_index], :].reset_index(drop=True)
+    # dummy_cols = optimal_encoded_X.filter(like="?")
+    # decoded_categories = pd.from_dummies(dummy_cols, sep="?")
+    # optimal_X = pd.concat([optimal_encoded_X.drop(columns=dummy_cols.columns), decoded_categories], axis=1).iloc[0,:]
+
+
+    # Get all features...............Consider setting an id to the feature div, and use it's children as a state. No need to loop
+    # ordered_features = []
+    # ordered_features_with_category = []
+    optimal_values = []
+    for i in range(0, len(input_info)):
+        # print(input_info[i])
+        feature = input_info[i]["id"]["index"].split("-")[1]
+        optimal_values.append(optimal_X[feature])
+        # if feature in categorical_features:
+        #     ordered_features_with_category.append(feature + "?" + ordered_values[i])
+        #     ordered_values[i] = 1
+        # else:
+        #     ordered_features_with_category.append(feature)
+        # ordered_features.append(feature)
+
+
+    # for i in range(0, len(feature_sliders)):
+    #     # curr_slider = 
+    #     feature = feature_sliders[i]["props"]["children"][1]["props"]["id"]["index"].split("-")[1]
+    #     feature_sliders[i]["props"]["children"][1]["props"]["value"] = optimal_X[feature]
+
+    print(optimal_index)
+    # print(predictions[optimal_index])
+    print(top_predictions[optimal_index])
+    # print(optimal_X)
+    # print(ordered_values)
+    return False, optimal_values
+    # return False, feature_sliders
+
+
 
 
 ############################## Closes the Train Model UI
@@ -638,21 +907,26 @@ def train_model(n_clicks, n_estimators, learning_rate, max_depth, colsample_byno
 
     if order_matters:
         cv = TimeSeriesSplit(n_splits=5)
+        df_ordered = df[selected_features]
     else:
         cv = 5
+        df_ordered = df[selected_features].sample(frac=1, random_state=0)
 
     if is_classification:
         print("classification")
-        df_clean_target = df.dropna(subset=target)
+        df_clean_target = df_ordered.dropna(subset=target)
         y = np.where(df_clean_target[target] == target_map[0], 0, 1)
         X = df_clean_target.drop(columns=target)
         encoded_X = pd.get_dummies(X, prefix_sep="?")
         print(encoded_X.shape)
+        pos_count = y.sum()
+        neg_count = len(y) - pos_count
         model = xgb.XGBClassifier(n_estimators=n_estimators,
                                   learning_rate=learning_rate,
                                   max_depth=max_depth,
-                                  colsample_bynode=colsample_bynode, 
+                                  colsample_bynode=colsample_bynode,
                                   gamma=1,
+                                  scale_pos_weight=neg_count/pos_count,
                                   random_state=0)
         # scores = cross_val_score(model, encoded_X, y, cv=5, scoring="roc_auc")# 0.6208767361111109
         results = cross_validate(model, encoded_X, y, cv=cv, scoring="roc_auc", return_train_score=True)# 0.6208767361111109
@@ -661,7 +935,7 @@ def train_model(n_clicks, n_estimators, learning_rate, max_depth, colsample_byno
         model.fit(encoded_X, y)
     else:
         print("regression")
-        df_clean_target = df.dropna(subset=target)
+        df_clean_target = df_ordered.dropna(subset=target)
         y = df_clean_target[target]
         X = df_clean_target.drop(columns=target)
         encoded_X = pd.get_dummies(X, prefix_sep="?")
@@ -693,7 +967,7 @@ def train_model(n_clicks, n_estimators, learning_rate, max_depth, colsample_byno
     return model_accuracy_gauge, cv_graph, update_page_n_clicks + 1, curr_model_score
 
 
-############################## Opens the Train Model UI
+############################## Handles the Sample Order UI and Opens the Train Model UI
 @app.callback(
     dash.dependencies.Output(component_id="train-model-modal", component_property='is_open', allow_duplicate=True),
     dash.dependencies.Output(component_id="select-sample-order-modal", component_property='is_open', allow_duplicate=True),
@@ -701,7 +975,7 @@ def train_model(n_clicks, n_estimators, learning_rate, max_depth, colsample_byno
     dash.dependencies.State(component_id="sample-order-dropdown", component_property='value'),
     prevent_initial_call=True,
 )
-def open_train_model_modal(n_clicks, sample_order_matters):
+def saves_sample_order_and_opens_train_model_modal(n_clicks, sample_order_matters):
     print("inside open_train_model_modal")
     global order_matters
 
@@ -730,16 +1004,42 @@ def open_train_model_modal(n_clicks, sample_order_matters):
 
 
 
-############################## Opens the Sample Order UI
+# ############################## Opens the Sample Order UI
+# @app.callback(
+#     dash.dependencies.Output(component_id="select-sample-order-modal", component_property='is_open', allow_duplicate=True),
+#     dash.dependencies.Output(component_id="select-input-modal", component_property='is_open'),
+#     dash.dependencies.Input(component_id="save-input-next-btn", component_property='n_clicks'),
+#     prevent_initial_call=True,
+# )
+# def open_sample_order_modal(n_clicks):
+#     return True, False
+
+
+############################## Handles the Select Input UI and Opens the Sample Order UI
 @app.callback(
     dash.dependencies.Output(component_id="select-sample-order-modal", component_property='is_open', allow_duplicate=True),
+    dash.dependencies.Output(component_id="select-input-modal", component_property='is_open'),
+    dash.dependencies.Input(component_id="save-input-next-btn", component_property='n_clicks'),
+    dash.dependencies.State(component_id="final-features-checklist", component_property='value'),
+    prevent_initial_call=True,
+)
+def save_inputs_and_open_sample_order_modal(n_clicks, right_panel_features):
+    global selected_features
+    selected_features = right_panel_features.copy()
+    if target not in selected_features:
+        selected_features.append(target)
+    return True, False
+
+
+############################## Opens the Select Input UI
+@app.callback(
+    dash.dependencies.Output(component_id="select-input-modal", component_property='is_open', allow_duplicate=True),
     dash.dependencies.Output(component_id="select-output-modal", component_property='is_open'),
     dash.dependencies.Input(component_id="save-output-next-btn", component_property='n_clicks'),
     prevent_initial_call=True,
 )
-def open_sample_order_modal(n_clicks):
+def open_select_input_modal(n_clicks):
     return True, False
-
 
 
 ############################## Handles the Select Output UI
@@ -784,6 +1084,11 @@ def open_select_output_modal(n_clicks):
 @app.callback(
     dash.dependencies.Output(component_id="output-data-upload", component_property='children'),
     dash.dependencies.Output(component_id="select-output-dropdown", component_property='options'),
+    dash.dependencies.Output(component_id="all-features-checklist", component_property='options'),
+    dash.dependencies.Output(component_id="all-features-checklist", component_property='value'),
+    dash.dependencies.Output(component_id="final-features-checklist", component_property='options'),
+    dash.dependencies.Output(component_id="final-features-checklist", component_property='value'),
+    dash.dependencies.Output(component_id='total-tags', component_property='children'),
     dash.dependencies.Input(component_id="upload-data", component_property='contents'),
     dash.dependencies.Input(component_id="upload-data", component_property='filename'),
     dash.dependencies.Input(component_id="upload-data", component_property='last_modified'),
@@ -816,7 +1121,7 @@ def show_uploaded_data(contents, filename, modified_date):
                 columnSize="autoSize",#"sizeToFit"
             ),
         ])
-        return children, df.columns
+        return children, df.columns, df.columns, df.columns, df.columns, df.columns, f"{len(df.columns)} Total Variables"
 
 
 ############################## Opens the Import Data UI
@@ -830,12 +1135,14 @@ def open_get_data_modal(n_clicks):
     return True
 
 
-
+# optimization-direction
 @app.callback(
     dash.dependencies.Output(component_id="feature-slider-container", component_property='children'),
     dash.dependencies.Output(component_id="positive-contribution-container", component_property='children'),
     dash.dependencies.Output(component_id="negative-contribution-container", component_property='children'),
     dash.dependencies.Output(component_id="page-title", component_property='children'),
+    dash.dependencies.Output(component_id="exluded-optmization-features-dropdown", component_property='options'),
+    dash.dependencies.Output(component_id="optimization-direction", component_property='children'),
     dash.dependencies.Input(component_id="update-page-btn", component_property='n_clicks'),
     prevent_initial_call=True,
 )
@@ -895,8 +1202,8 @@ def clicked_button(n_clicks):
                    "height":"60px","fontWeight":"600"})
             negative_contributions_containers.append(negative_container)
         else:
-            feature_min = df_clean_target[feature].quantile(0.05)
-            feature_max = df_clean_target[feature].quantile(0.95)
+            feature_min = df_clean_target[feature].quantile(0.01)
+            feature_max = df_clean_target[feature].quantile(0.99)
             # feature_min = df[feature].min()
             # feature_max = df[feature].max()
             precision_size = (feature_max - feature_min) / 50
@@ -922,7 +1229,7 @@ def clicked_button(n_clicks):
                 dcc.Slider(
                     min=feature_min, max=feature_max, step=feature_step, marks=None,
                     value=df_clean_target[feature].median().round(rounded_places),
-                    tooltip={"placement": "right", "always_visible": True, "style":{"fontSize":"13px"}},
+                    tooltip={"placement": "right", "always_visible": True, "style":{"fontSize":"13px"}},#,"lineHeight":"1"
                     id={"type":"update-x-values", "index":f"{i}-{feature}"},
                     className="slider-class",#
                 )
@@ -958,13 +1265,16 @@ def clicked_button(n_clicks):
 
     if is_classification:
         if target_map[1] == 1:
-            page_title = f"{target.upper()} - SIMULATION"
+            target_label = target
+            # page_title = f"{target.upper()} - SIMULATION"
         else:
-            page_title = f"{target_map[1].upper()} - SIMULATION"
+            target_label = target_map[1]
+            # page_title = f"{target_map[1].upper()} - SIMULATION"
     else:
-        page_title = f"{target.upper()} - SIMULATION"
+        target_label = target
+        # page_title = f"{target.upper()} - SIMULATION"
 
-    return feature_sliders, positive_contributions_containers, negative_contributions_containers, page_title
+    return feature_sliders, positive_contributions_containers, negative_contributions_containers, f"{target_label.upper()} - SIMULATION", ordered_features, f"Are Higher Values of {target_label} Better?"
 
 
 
@@ -997,7 +1307,7 @@ def update_prediction(ordered_values, n_clicks, positive_contributions_div, nega
 
     # Get all features...............Consider setting an id to the feature div, and use it's children as a state. No need to loop
     input_info = ctx.inputs_list[0]
-    ordered_features = []
+    local_ordered_features = []
     ordered_features_with_category = []
     for i in range(0, len(input_info)):
         feature = input_info[i]["id"]["index"].split("-")[1]
@@ -1006,7 +1316,7 @@ def update_prediction(ordered_values, n_clicks, positive_contributions_div, nega
             ordered_values[i] = 1
         else:
             ordered_features_with_category.append(feature)
-        ordered_features.append(feature)
+        local_ordered_features.append(feature)
     # print(ordered_features)
 
     # Form ordered_X dataframe
@@ -1026,7 +1336,7 @@ def update_prediction(ordered_values, n_clicks, positive_contributions_div, nega
             cat_feature_cols = [selected_feature + "?" + cat for cat in feature_values]
             model_ready_X[cat_feature_cols] = np.identity(len(cat_feature_cols))
         else:
-            feature_values = np.unique(df[selected_feature])
+            feature_values = np.unique(df[selected_feature].dropna())
             if len(feature_values) > 1000:
                 feature_values = np.linspace(start=feature_values[0], stop=feature_values[-1], num=1000)
             model_ready_X = model_ready_X.loc[model_ready_X.index.repeat(len(feature_values))].reset_index(drop=True)
@@ -1034,9 +1344,15 @@ def update_prediction(ordered_values, n_clicks, positive_contributions_div, nega
 
         if is_classification:
             predicted_vals = model.predict_proba(model_ready_X)[:,1]
+            if target_map[1] == 1:
+                y_display = f"{target} (prob)"
+            else:
+                y_display = f"{target_map[1]} (prob)"
+            contrib_fig = get_graph(x=feature_values, y=predicted_vals, x_title=selected_feature, y_title=y_display, title=f"{selected_feature} vs {y_display}")
         else:
             predicted_vals = model.predict(model_ready_X)
-        contrib_fig = get_graph(x=feature_values, y=predicted_vals, x_title=selected_feature, y_title="Prediction", title=f"{selected_feature} vs Prediction")
+            y_display = f"{target}*"
+            contrib_fig = get_graph(x=feature_values, y=predicted_vals, x_title=selected_feature, y_title=y_display, title=f"{selected_feature} vs {y_display}")
         
         # feature_index = np.where(model_ready_X.columns == selected_feature)[0][0]
         # contribs = model.get_booster().predict(xgb.DMatrix(model_ready_X), pred_contribs=True)
@@ -1057,7 +1373,7 @@ def update_prediction(ordered_values, n_clicks, positive_contributions_div, nega
     contrib_df = contrib_df.groupby(lambda x: x.split('?')[0], axis=1).sum()
     
     # Reorder the dataframe columns to match the web app and store into array
-    ordered_contribs = np.asarray(contrib_df[ordered_features])[0]
+    ordered_contribs = np.asarray(contrib_df[local_ordered_features])[0]
 
 
     # Update contribution bars and labels
