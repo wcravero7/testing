@@ -1,0 +1,151 @@
+
+.hover-radio label {
+    border-radius: 6px;
+    cursor: pointer;
+    /* transition: background-color 0.15s ease-in-out; */
+}
+
+.hover-radio label:hover {
+    background-color: rgba(13,110,253,0.15);
+}
+
+
+.closed-panel {
+    overflow: hidden;
+    max-height: 0;
+    visibility: hidden;
+    transition: max-height 0.5s ease, visibility 0s linear 0.5s;
+}
+
+.opened-panel {
+    overflow: hidden;
+    max-height: 50vh;
+    visibility: visible;
+    transition: max-height 0.5s ease;
+}
+
+
+.someclass{
+    padding: 5px 5px 5px 5px !important;
+    /* padding: 5px 25px 5px 25px !important; */
+}
+
+
+.slider-class{
+    width:10vw;
+    padding: 0 5px 10px 25px !important;
+    /* 10 */
+    /* padding: 5px 5px 5px 5px !important; */
+    /* padding: 5px 25px 5px 25px !important; */
+}
+.rc-slider-tooltip-inner {
+    background-color: #616161 !important;
+    color: white;
+    border-radius: 5px;
+    /* padding: 4px 2px 7px 2px !important; */
+    padding: 4px 3px 6px 3px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: normal !important;
+}
+
+
+
+
+
+
+/* .my-class.Select-control2 {
+    height: 15px;
+}
+.my-class.Select-input2 input {
+    height: 15px !important;
+    padding: 20px 0 0 0 !important;
+    caret-color: transparent !important;
+}
+.my-class.Select-placeholder2, .Select-value2 {
+    line-height: 35px !important;
+}
+.my-class.Select-value-label2{
+    color: white !important;
+    background-color: #616161 !important;
+    padding: 5px 5px 5px 5px !important;
+    border-radius: 5px;
+}
+.my-class.Select-arrow-zone2 {
+    display: none !important;
+}
+.my-class.Select.is-focused:not(.is-open) > .Select-control {
+    border-color: transparent !important;
+    box-shadow: none !important;
+    border: 0 !important;
+} */
+
+
+
+
+
+
+.Select-control {
+    height: 15px;
+}
+.Select-input input {
+    height: 15px !important;
+    padding: 20px 0 0 0 !important;
+    caret-color: transparent !important;
+}
+.Select-placeholder, .Select-value {
+    line-height: 35px !important;
+}
+.Select-value-label{
+    color: white !important;
+    background-color: #616161 !important;
+    padding: 4px 3px 4px 3px !important;
+    border-radius: 5px;
+}
+.Select-arrow-zone {
+    display: none !important;
+}
+.Select.is-focused:not(.is-open) > .Select-control {
+    border-color: transparent !important;
+    box-shadow: none !important;
+    border: 0 !important;
+}
+
+
+
+/* #select-output-modal .Select-value-label{
+    color: black !important;
+    background-color: transparent !important;
+    padding: 5px 5px 5px 5px !important;
+    border-radius: 5px;
+}
+
+#select-sample-order-modal .Select-value-label{
+    color: black !important;
+    background-color: transparent !important;
+    padding: 5px 5px 5px 5px !important;
+    border-radius: 5px;
+}
+
+#optimization-modal .Select-value-label{
+    color: black !important;
+    background-color: transparent !important;
+    padding: 5px 5px 5px 5px !important;
+    border-radius: 5px;
+} */
+
+.regular-dropdown .Select-value-label{
+    color: black !important;
+    background-color: transparent !important;
+    padding: 5px 5px 5px 5px !important;
+    border-radius: 5px;
+}
+
+
+
+.split-background {
+  /* This creates a hard vertical split at the 50% mark */
+  background: linear-gradient(to right, #f9a75a59 0%, #f9a75a59 50%, #599ad358 50%, #599ad358 100%);
+}
+
